@@ -1,0 +1,1090 @@
+#include <WiFiNINA.h>
+#include <Wire.h>
+#include <NeoPixelConnect.h>
+#include <WiFiUdp.h>
+#include <TimeLib.h>
+#include <Adafruit_Debounce.h>
+#include <MDNS_Generic.h>
+
+#define anzahl 114
+
+#define E 0
+#define S_IST 1
+#define FUENFM 2
+#define ZEHNM 3
+#define	ZWANZIG 4
+#define	DREIVIERTEL 5
+#define VIERTEL 6
+#define VOR 7
+#define NACH 8
+#define HALB 9
+#define ELF 10
+#define FUENF 11
+#define EIN 12
+#define S 13
+#define ZWEI 14
+#define DREI 15
+#define VIER 16
+#define SECHS 17
+#define ACHT 18
+#define SIEBEN 19
+#define ZWOELF 20
+#define ZEHN 21
+#define NEUN 22
+#define UHR 23
+#define M1 24
+#define M2 25
+#define M3 26
+#define M4 27
+#define ER 28
+
+int m;
+int d;
+int hours;
+int hours1;
+int hours12;
+int minutes;
+int seconds;
+
+int zaehler = 0;
+
+int t = 0;
+int t1 = 0;
+int t2 = 0;
+
+int hr = 0;
+int mi = 0;
+
+uint8_t eHelligkeit = 200;
+
+uint8_t tModus = 0; // 0 = Uhr stellen, 1 = Farbe/Helligkeit einstellen
+
+uint8_t farben [] [4] = {
+  {255, 255, 255},
+  {1, 0, 0},
+  {0, 1, 0},
+  {0, 0, 1}
+};
+
+uint8_t hell [] = {255, 190, 130, 65};
+
+uint16_t rfarben []  = {0, 0, 0};
+
+
+// Steuerungsvariablen
+String mode = "Modus1";
+String color = "#ffffff";
+int brightness= 255;
+
+// GPIO Pin 18 (D6), Anzahl der LEDs
+NeoPixelConnect p(25, anzahl);
+
+// Entprellung der Taster
+Adafruit_Debounce taster(14, LOW);
+Adafruit_Debounce taster1(15, LOW);
+Adafruit_Debounce taster2(16, LOW);
+
+unsigned long buttonPressTime = 0;
+bool buttonLongPressed = false;
+
+const int EEPROM_SSID_START = 0;
+const int EEPROM_SSID_MAXLEN = 32;
+const int EEPROM_PASS_START = 32;
+const int EEPROM_PASS_MAXLEN = 64;
+
+// Zordnung LEDs => Wort
+uint8_t wort [] [11] = {
+  {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // E
+  {0, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0}, // S IST
+  {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}, // FÜNFM
+  {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // ZEHNM
+  {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1}, // ZWANZIG
+  {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, // DREIVIERTEL
+  {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1}, // VIERTEL
+  {1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, // VOR
+  {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}, // NACH
+  {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // HALB
+  {0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0}, // ELF
+  {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}, // FUENF
+  {1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, // EIN
+  {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}, // S
+  {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}, // ZWEI
+  {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // DREI
+  {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}, // VIER
+  {1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}, // SECHS
+  {0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1}, // ACHT
+  {1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0}, // SIEBEN
+  {0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1}, // ZWOELF
+  {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // ZEHN 
+  {0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0}, // NEUN
+  {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1}, // UHR
+  {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // M1
+  {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // M2
+  {1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, // M3
+  {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0}, // M4
+  {1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}  // ER
+
+};
+
+  // Zuordnung Wörter => Zeilen
+uint8_t zeilen [] = {0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 9, 10, 10, 10, 10, 10};
+
+uint8_t speicher [11] [11];
+
+// Uhrzeit aus dem Internet beziehen
+
+const char* ntpServer = "ptbtime1.ptb.de";
+const long  gmtOffset_sec = 0;
+const int   daylightOffset_sec = 3600;
+
+WiFiServer server(80);
+WiFiUDP udpNTP;
+WiFiUDP udpMDNS;
+
+unsigned int localPort = 2390;
+MDNS mdns(udpMDNS);  // <- eigenes Objekt erstellen
+
+#define NTP_PACKET_SIZE 48 // Definition der NTP_PACKET_SIZE-Konstante
+
+byte packetBuffer[NTP_PACKET_SIZE]; // Deklaration der packetBuffer-Variable
+
+time_t getNtpTime() {
+
+  sendNTPpacket(ntpServer);
+  delay(1000);
+
+  if (udpNTP.parsePacket()) {
+    udpNTP.read(packetBuffer, NTP_PACKET_SIZE);
+    unsigned long secsSince1900 = (unsigned long)packetBuffer[40] << 24 |
+                                   (unsigned long)packetBuffer[41] << 16 |
+                                   (unsigned long)packetBuffer[42] << 8 |
+                                   packetBuffer[43];
+    time_t utc = secsSince1900 - 2208988800UL;
+
+    return utc + getDSTOffset(utc);
+  }
+
+  return 0;
+}
+
+void sendNTPpacket(const char* address) {
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
+  packetBuffer[0] = 0b11100011;
+  packetBuffer[1] = 0;
+  packetBuffer[2] = 6;
+  packetBuffer[3] = 0xEC;
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+
+  udpNTP.beginPacket(address, 123);
+  udpNTP.write(packetBuffer, NTP_PACKET_SIZE);
+  udpNTP.endPacket();
+}
+
+void an(uint8_t wortindex){
+  for (int i = 0; i < 11; i++){
+    speicher[i] [zeilen [wortindex] ] = speicher[i] [zeilen [wortindex] ] || wort [wortindex] [i];
+  } 
+}
+void aus(uint8_t wortindex){
+  for (int i = 0; i < 11; i++){
+    speicher[i] [zeilen [wortindex] ] = speicher[i] [zeilen [wortindex] ] && !wort [wortindex] [i];
+  } 
+}
+
+void Uhrzeit () {
+  for ( int x = 0; x < 11; x++){
+    for (int y = 0; y < 11; y++){
+      speicher [x] [y] = 0;
+    }
+  }
+  an(E);
+  an(S_IST);
+
+  // Zeig Minuten
+  if(minutes >= 5 && minutes < 10) {
+  an(FUENFM);
+  an(NACH);
+  }
+
+  else if(minutes >= 10 && minutes < 15) {
+  an(ZEHNM);
+  an(NACH);
+  }
+
+  else if(minutes >= 15 && minutes < 20) {
+  an(VIERTEL);
+  an(NACH);
+  }
+
+  else if(minutes >= 20 && minutes < 25) {
+  an(ZWANZIG);
+  an(NACH);
+
+  }
+
+  else if(minutes >= 25 && minutes < 30) {
+  an(FUENFM);
+  an(VOR);
+  an(HALB);
+  }
+
+  else if(minutes >= 30 && minutes < 35) {
+  an(HALB);
+  }
+
+  else if(minutes >= 35 && minutes < 40) {
+  an(FUENFM);
+  an(NACH);
+  an(HALB);
+  }
+
+  else if(minutes >= 40 && minutes < 45) {
+  an(ZWANZIG);
+  an(VOR);
+  }
+
+  else if(minutes >= 45 && minutes < 50) {
+  an(VIERTEL);
+  an(VOR);
+  }
+
+  else if(minutes >= 50 && minutes < 55) {
+  an(ZEHNM);
+  an(VOR);
+  }
+
+  else if(minutes >= 55 && minutes < 60) {
+  an(FUENFM);
+  an(VOR);
+  }
+
+
+  switch (minutes%5) {
+
+    case 0:
+    break;
+
+    case 1:
+    an(M1);
+    break;
+
+    case 2:
+    an(M2);
+    break;
+
+    case 3:
+    an(M3);
+    break;
+
+    case 4:
+    an(M4);
+    break;
+
+  }
+
+  if(hours >= 12) {
+    hours -= 12;
+  }
+
+  if(minutes >= 25) {
+    hours++;
+  }
+
+  if(hours == 12) {
+    hours = 0;
+  }
+
+  // Zeige Stunden
+  switch(hours) {
+
+    case 0:
+    an(ZWOELF);
+    break;
+
+    case 1:
+    an(EIN);
+    if(minutes > 4){
+      an(S);
+    }
+    break;
+
+    case 2:
+    an(ZWEI);
+    break;
+
+    case 3:
+    an(DREI);
+    break;
+
+    case 4:
+    an(VIER);
+    break;
+
+    case 5:
+    an(FUENF);
+    break;
+
+    case 6:
+    an(SECHS);
+    break;
+
+    case 7:
+    an(SIEBEN);
+    break;
+
+    case 8:
+    an(ACHT);
+    break;
+
+    case 9:
+    an(NEUN);
+    break;
+
+    case 10:
+    an(ZEHN);
+    break;
+
+    case 11:
+    an(ELF);
+    break;
+
+  }
+
+  if(minutes < 5) {
+   an(UHR);
+  }
+
+}
+
+void AMPM (uint8_t x, uint8_t y) {
+  if (t2 == 1) {
+    p.neoPixelSetValue(y*11+x, (rfarben [0] * brightness) / 255, (rfarben [1] * brightness) / 255 , (rfarben [2] * brightness) / 255, false);
+  }
+  else {
+    p.neoPixelSetValue(y*11+x, (farben[t] [0] * brightness) / 255, (farben[t] [1] * brightness) / 255 , (farben[t] [2] * brightness) / 255, false);
+  }
+}
+
+// Serielle Ausgabe der Zeit
+void printTime() {
+  Serial.print(hours);
+  Serial.print(":");
+  printDigits(minutes);
+  Serial.print("-");
+  Serial.print(d);
+  Serial.print(".");
+  Serial.print(m);
+  Serial.println();
+  //delay(10000);
+}
+
+// Serielle Ausgabe
+void printDigits(int digits) {
+  if (digits < 10) {
+    Serial.print('0');
+  }
+  Serial.print(digits);
+}
+
+void HSVtoRGB(uint16_t h, uint8_t s, uint8_t v, uint8_t &r, uint8_t &g, uint8_t &b) {
+  float hf = h / 60.0;
+  int i = floor(hf);
+  float f = hf - i;
+  float p = v * (1 - s / 255.0);
+  float q = v * (1 - f * s / 255.0);
+  float t = v * (1 - (1 - f) * s / 255.0);
+
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+}
+
+void rainbowStartupEffect() {
+  const int steps = 60;  // Anzahl der Farbschritte
+  const int delayTime = 50;
+
+  for (int i = 0; i < steps; i++) {
+    uint16_t hue = (i * 360) / steps;
+
+    for (int x = 0; x < 11; x++) {
+      for (int y = 0; y < 11; y++) {
+        uint8_t r, g, b;
+        HSVtoRGB((hue + (x + y) * 10) % 360, 255, 100, r, g, b);
+        p.neoPixelSetValue(y * 11 + x, r, g, b, false);
+      }
+    }
+    p.neoPixelShow();
+    delay(delayTime);
+  }
+  // Danach LEDs ausschalten
+  for (int i = 0; i < anzahl; i++) {
+    p.neoPixelSetValue(i, 0, 0, 0, false);
+  }
+  p.neoPixelShow();
+}
+
+// EEPROM Konfiguration
+#define EEPROM_I2C_ADDR 0x50
+#define EEPROM_SSID_ADDR 0x00
+#define EEPROM_PASS_ADDR 0x20
+#define MAX_SSID_LEN 32
+#define MAX_PASS_LEN 32
+
+// Access Point Daten
+const char* apSSID = "WordClock V2";
+//const char* apPASS = "12345678";
+
+bool isAccessPoint = false;
+
+String urlDecode(String input) {
+  String decoded = "";
+  char temp[] = "0x00";
+  unsigned int len = input.length();
+  unsigned int i = 0;
+  while (i < len) {
+    char c = input.charAt(i);
+    if (c == '+') {
+      decoded += ' ';
+    } else if (c == '%') {
+      if (i + 2 < len) {
+        temp[2] = input.charAt(i + 1);
+        temp[3] = input.charAt(i + 2);
+        decoded += (char)strtol(temp, NULL, 16);
+        i += 2;
+      }
+    } else {
+      decoded += c;
+    }
+    i++;
+  }
+  return decoded;
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+  udpNTP.begin(localPort);
+  delay(2000);
+  Serial.println("Starte...");
+
+  if (!connectToSavedWiFi()) {
+    startAccessPoint();
+  }
+
+  taster.begin();
+  pinMode(14, INPUT_PULLUP);
+  
+  server.begin();
+  /*
+  // Tasterfunktion beginnen
+  
+  taster.begin();
+  taster1.begin();
+  taster2.begin();
+  
+  pinMode(14, INPUT_PULLUP);
+  pinMode(15, INPUT_PULLUP);
+  pinMode(16, INPUT_PULLUP);
+  */
+  rainbowStartupEffect();
+  setSyncProvider(getNtpTime);
+  setSyncInterval(10000);
+
+}
+
+void loop() {
+  
+  mdns.run();
+
+  WiFiClient client = server.available();
+
+  if (client) {
+    String req = "";
+    unsigned long timeout = millis() + 1000;
+
+    while (client.connected() && millis() < timeout) {
+      if (client.available()) {
+        char c = client.read();
+        req += c;
+        if (req.endsWith("\r\n\r\n")) break;
+      }
+    }
+  // ---------------- PRIORITÄT: Access Point ----------------
+  if (isAccessPoint) {
+    if (req.indexOf("GET /settime?") != -1) {
+      handleSetTime(client, req);
+    } else {
+        handleWiFiConfig(client, req);
+    }
+  }
+  // ---------------- Normalbetrieb (WLAN-Modus) ----------------
+  else if (req.indexOf("GET /color") != -1) {
+    String rStr = extractValue(req, "r");
+    String gStr = extractValue(req, "g");
+    String bStr = extractValue(req, "b");
+    String brStr = extractValue(req, "br");
+
+    if (rStr != "" && gStr != "" && bStr != "") {
+      farben[t][0] = rStr.toInt();
+      farben[t][1] = gStr.toInt();
+      farben[t][2] = bStr.toInt();
+      t2 = 0;
+      Serial.print("Neue Farbe: ");
+      Serial.print(farben[t][0]); Serial.print(", ");
+      Serial.print(farben[t][1]); Serial.print(", ");
+      Serial.println(farben[t][2]);
+    }
+    if (brStr != "") {
+      brightness = constrain(brStr.toInt(), 10, 255);
+      Serial.print("Neue Helligkeit: ");
+      Serial.println(brightness);
+    }
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html");
+    client.println();
+    client.println("<html><body><h1>Farbe & Helligkeit gesetzt</h1></body></html>");
+  }
+  else if (req.indexOf("GET / ") != -1 || req.indexOf("GET /favicon.ico") != -1) {
+    sendControlPage(client);
+  }
+  client.stop();
+  }
+
+  m = month();
+  d = day();
+  hours = hour();
+  minutes = minute();
+  seconds = second();
+
+  //printTime();
+
+  if (zaehler == 100) {
+    zaehler = 0;
+
+    Uhrzeit();
+
+    for (int x = 0; x < 11; x++) {
+      for (int y = 0; y < 11; y++) {
+        int index = y * 11 + x;
+
+        if (speicher[x][y]) {
+        /*if (x == 0 && y == 0) {
+          // LED "E" dimmen
+          p.neoPixelSetValue(index,
+            (uint8_t)(farben[t][0] * eHelligkeit),
+            (uint8_t)(farben[t][1] * eHelligkeit),
+            (uint8_t)(farben[t][2] * eHelligkeit),
+            false);
+        } else {*/
+          // andere LEDs wie gewohnt
+          AMPM(x, y);
+        //}
+        } else {
+          // LED aus
+          p.neoPixelSetValue(index, 0, 0, 0, false);
+        }
+      }
+    }
+
+    p.neoPixelShow();
+
+  }
+  zaehler++;
+
+  taster.update();
+
+  if (taster.justPressed()) {
+    // Taster wurde gerade gedrückt
+    buttonPressTime = millis();
+    buttonLongPressed = false;
+  }
+
+  if (taster.isPressed()) {
+    // Taster ist gedrückt
+    if (!buttonLongPressed && (millis() - buttonPressTime > 3000)) {
+      buttonLongPressed = true;
+      clearWiFiCredentials();
+    }
+  }
+
+  if (taster.justReleased()) {
+    // Taster wurde losgelassen
+    buttonLongPressed = false;
+  }
+
+}
+// ----------------- WLAN --------------------
+
+bool connectToSavedWiFi() {
+  Serial.println("Lese gespeicherte WLAN-Daten...");
+
+  Serial.print("SSID (raw): ");
+  for (int i = 0; i < MAX_SSID_LEN; i++) {
+    char c = readEEPROM(EEPROM_SSID_ADDR + i);
+    Serial.print(c);
+  }
+  Serial.println();
+
+  Serial.print("PASS (raw): ");
+  for (int i = 0; i < MAX_PASS_LEN; i++) {
+    char c = readEEPROM(EEPROM_PASS_ADDR + i);
+    Serial.print(c);
+  }
+  Serial.println();
+
+  char ssid[MAX_SSID_LEN];
+  char pass[MAX_PASS_LEN];
+
+  readStringFromEEPROM(EEPROM_SSID_ADDR, ssid, MAX_SSID_LEN);
+  readStringFromEEPROM(EEPROM_PASS_ADDR, pass, MAX_PASS_LEN);
+
+  if (strlen(ssid) == 0) return false;
+
+  Serial.print("Versuche Verbindung zu: ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, pass);
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Verbunden! IP: ");
+    Serial.println(WiFi.localIP());
+    isAccessPoint = false;
+
+    // ----------- MDNS starten -----------
+    if (!mdns.begin(WiFi.localIP(), "wordclockv2")) {
+      Serial.println("MDNS-Start fehlgeschlagen");
+    } else {
+      Serial.println("MDNS aktiv: http://wordclockv2.local");
+      mdns.addServiceRecord("wordclockv2._http", 80, MDNSServiceTCP);
+    }
+    // -------------------------------------
+  return true;
+}
+
+
+  return false;
+}
+
+void startAccessPoint() {
+  Serial.println("Starte Access Point...");
+  WiFi.end();
+  delay(1000);
+  WiFi.beginAP(apSSID/*, apPASS*/);
+  IPAddress ip = WiFi.localIP();
+  Serial.print("AP-IP: ");
+  Serial.println(ip);
+  isAccessPoint = true;
+}
+
+// ----------------- EEPROM --------------------
+void writeStringToEEPROM(int startAddr, const char* data, int maxLen) {
+  for (int i = 0; i < maxLen; i++) {
+    byte val = (i < strlen(data)) ? data[i] : 0;
+    writeEEPROM(startAddr + i, val);
+  }
+}
+
+void readStringFromEEPROM(int startAddr, char* buffer, int maxLen) {
+  for (int i = 0; i < maxLen; i++) {
+    buffer[i] = readEEPROM(startAddr + i);
+  }
+  buffer[maxLen - 1] = '\0';
+}
+
+void writeEEPROM(byte addr, byte value) {
+  Wire.beginTransmission(EEPROM_I2C_ADDR);
+  Wire.write(addr);
+  Wire.write(value);
+  Wire.endTransmission();
+  delay(5);
+}
+
+byte readEEPROM(byte addr) {
+  Wire.beginTransmission(EEPROM_I2C_ADDR);
+  Wire.write(addr);
+  Wire.endTransmission();
+  Wire.requestFrom(EEPROM_I2C_ADDR, 1);
+  if (Wire.available()) return Wire.read();
+  return 0xFF;
+}
+
+// ----------------- Webseiten --------------------
+void handleWiFiConfig(WiFiClient& client, String req) {
+  if (req.indexOf("ssid=") >= 0) {
+    String ssid = urlDecode(extractValue(req, "ssid"));
+    String pass = urlDecode(extractValue(req, "pass"));
+
+    writeStringToEEPROM(EEPROM_SSID_ADDR, ssid.c_str(), MAX_SSID_LEN);
+    writeStringToEEPROM(EEPROM_PASS_ADDR, pass.c_str(), MAX_PASS_LEN);
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html");
+    client.println();
+    client.println("<html><body><h2>Gespeichert. Neustart...</h2></body></html>");
+
+    delay(2000);
+    NVIC_SystemReset();  // RP2040 Neustart
+    return;
+  }
+
+  // Konfigurationsseite anzeigen
+  String page = R"rawliteral(
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>WordClock WLAN Setup</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #ffffff;
+      color: #222;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+
+    .card {
+      background: #f9f9f9;
+      padding: 30px;
+      margin: 80px auto;
+      max-width: 400px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    input {
+      margin: 10px 0;
+      width: 90%;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 1em;
+    }
+
+    input[type="submit"] {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    input[type="submit"]:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>WordClock V2</h1>
+    <h2>WLAN konfigurieren</h2>
+    <form action="/" method="GET">
+      <input name="ssid" placeholder="WLAN-Name (SSID)"><br>
+      <input name="pass" type="password" placeholder="Passwort"><br>
+      <input type="submit" value="Speichern">
+    </form>
+
+    <hr style="margin: 40px 0;">
+
+    <h2>Uhrzeit manuell setzen</h2>
+    <form method="GET" action="/settime">
+      <label for="date"><b>Datum:</b></label><br>
+      <input type="text" name="date" placeholder="TT.MM.JJJJ" required><br><br>
+
+      <label for="time"><b>Uhrzeit:</b></label><br>
+      <input type="text" name="time" placeholder="HH:MM" required><br><br>
+
+      <input type="submit" value="Uhrzeit setzen">
+    </form>
+  </div>
+</body>
+</html>
+)rawliteral";
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println();
+  client.print(page);
+}
+
+void sendControlPage(WiFiClient& client) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println();
+
+  client.println(R"rawliteral(
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>WordClock V2</title>
+<style>
+  body {
+    font-family: sans-serif;
+    background: #ffffff;
+    color: #222;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+  }
+
+  .ip-info {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 0.8em;
+    color: #666;
+  }
+
+  .card {
+    background: #f9f9f9;
+    padding: 30px;
+    margin: 80px auto;
+    max-width: 400px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+
+  h1 {
+    margin-top: 0;
+  }
+
+  label {
+    font-weight: bold;
+  }
+
+  input[type="color"] {
+    width: 100%;
+    height: 60px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    margin-top: 20px;
+  }
+
+  button {
+    padding: 12px 20px;
+    margin-top: 25px;
+    font-size: 1.1em;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background: #007bff;
+    color: white;
+  }
+
+  button:hover {
+    background: #0056b3;
+  }
+</style>
+</head>
+<body>
+)rawliteral");
+
+  client.print("<div class='ip-info'>IP-Adresse: ");
+  client.print(WiFi.localIP());
+  client.println("</div>");
+
+  client.println(R"rawliteral(
+<div class="card">
+  <h1>WordClock V2</h1>
+
+  <label for="colorPicker">Farbe:</label><br>
+  <input type="color" id="colorPicker" value="#ffffff"><br>
+  <br>
+  <label for="brightness">Helligkeit:</label><br>
+  <input type="range" id="brightness" min="10" max="255" value="100"><br>
+
+  <button onclick="sendColor()">Übernehmen</button>
+</div>
+
+<script>
+function sendColor(){
+  const c=document.getElementById("colorPicker").value;
+  const r=parseInt(c.substr(1,2),16);
+  const g=parseInt(c.substr(3,2),16);
+  const b=parseInt(c.substr(5,2),16);
+  const br=document.getElementById("brightness").value;
+  fetch(`/color?r=${r}&g=${g}&b=${b}&br=${br}`)
+    .then(res=>{if(res.ok)alert("Farbe & Helligkeit gesendet!");else alert("Fehler.");})
+    .catch(e=>alert("Verbindungsfehler"));
+}
+</script>
+</body>
+</html>
+)rawliteral");
+}
+
+
+
+void handleControlUpdate(WiFiClient& client, String req) {
+  color = extractValue(req, "c");
+  brightness = extractValue(req, "b").toInt();
+  mode = extractValue(req, "m");
+
+  Serial.println("Farbe: " + color + ", Helligkeit: " + String(brightness) + ", Modus: " + mode);
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/plain");
+  client.println();
+  client.print("OK");
+}
+
+String extractValue(String req, String key) {
+  int idx = req.indexOf(key + "=");
+  if (idx == -1) return "";
+
+  int start = idx + key.length() + 1;
+
+  // Ende ist entweder das nächste & oder das erste Leerzeichen
+  int end1 = req.indexOf("&", start);
+  int end2 = req.indexOf(" ", start);  // HTTP trennt mit Leerzeichen
+
+  int end;
+  if (end1 == -1 && end2 == -1) end = req.length();
+  else if (end1 == -1) end = end2;
+  else if (end2 == -1) end = end1;
+  else end = min(end1, end2);
+
+  return req.substring(start, end);
+}
+
+  long getDSTOffset(time_t t) {
+    // MESZ = UTC+2, MEZ = UTC+1
+    if (isDST(t)) {
+      return 2 * SECS_PER_HOUR;
+    } else {
+      return 1 * SECS_PER_HOUR;
+    }
+  }
+
+    bool isDST(time_t t) {
+    int y = year(t);
+    int m = month(t);
+    int d = day(t);
+    int h = hour(t);
+    int dow = weekday(t); // 1 = Sonntag, ..., 7 = Samstag
+
+    if (m < 3 || m > 10) return false; // Jan, Feb, Nov, Dez: keine Sommerzeit
+    if (m > 3 && m < 10) return true;  // Apr bis Sep: Sommerzeit
+
+    // Letzter Sonntag im März
+    if (m == 3) {
+      int lastSunday = 31 - ((5 + y * 5 / 4) % 7);
+      if (d > lastSunday || (d == lastSunday && h >= 2)) return true;
+      else return false;
+    }
+
+    // Letzter Sonntag im Oktober
+    if (m == 10) {
+      int lastSunday = 31 - ((5 + y * 5 / 4) % 7);
+      if (d < lastSunday || (d == lastSunday && h < 3)) return true;
+      else return false;
+    }
+
+    return false;
+  }
+
+void handleSetTime(WiFiClient& client, String req) {
+  // Parameter aus URL auslesen und URL-dekodieren
+  String dateStr = urlDecode(extractValue(req, "date"));
+  String timeStr = urlDecode(extractValue(req, "time"));
+
+  Serial.print("Datum: "); Serial.println(dateStr);
+  Serial.print("Zeit: "); Serial.println(timeStr);
+
+  // Validierung des Formats TT.MM.JJJJ und HH:MM
+  if (dateStr.length() != 10 || timeStr.length() != 5 ||
+      dateStr.charAt(2) != '.' || dateStr.charAt(5) != '.' || timeStr.charAt(2) != ':') {
+    client.println("HTTP/1.1 400 Bad Request");
+    client.println("Content-Type: text/html");
+    client.println();
+    client.println("<html><body><h1>Ungültiges Zeitformat!</h1></body></html>");
+    return;
+  }
+
+  int day = dateStr.substring(0, 2).toInt();
+  int month = dateStr.substring(3, 5).toInt();
+  int year = dateStr.substring(6, 10).toInt();
+  int hour = timeStr.substring(0, 2).toInt();
+  int minute = timeStr.substring(3, 5).toInt();
+
+  // Grundlegende Plausibilitätsprüfung
+  if (day < 1 || day > 31 || month < 1 || month > 12 ||
+      year < 2000 || year > 2099 || hour < 0 || hour > 23 ||
+      minute < 0 || minute > 59) {
+    client.println("HTTP/1.1 400 Bad Request");
+    client.println("Content-Type: text/html");
+    client.println();
+    client.println("<html><body><h1>Ungültige Zeitangaben!</h1></body></html>");
+    return;
+  }
+
+  // tmElements_t aufbauen (für TimeLib)
+  tmElements_t tm;
+  tm.Day = day;
+  tm.Month = month;
+  tm.Year = year - 1970;  // TimeLib erwartet Jahr ab 1970
+  tm.Hour = hour;
+  tm.Minute = minute;
+  tm.Second = 0;
+
+  time_t t = makeTime(tm);
+  setTime(t);
+
+  Serial.print("Neue Zeit gesetzt: ");
+  Serial.print(year); Serial.print("-");
+  Serial.print(month); Serial.print("-");
+  Serial.print(day); Serial.print(" ");
+  Serial.print(hour); Serial.print(":");
+  Serial.println(minute);
+
+  // Bestätigung an den Client senden
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println();
+  client.println("<html><body><h1>Zeit erfolgreich gesetzt!</h1></body></html>");
+}
+
+
+void clearWiFiCredentials() {
+  for (int i = 0; i < EEPROM_SSID_MAXLEN; i++) {
+    writeEEPROM(EEPROM_SSID_START + i, 0);
+  }
+  for (int i = 0; i < EEPROM_PASS_MAXLEN; i++) {
+    writeEEPROM(EEPROM_PASS_START + i, 0);
+  }
+  Serial.println("WLAN Daten gelöscht!");
+  NVIC_SystemReset(); // Reset für RP2040
+}
+
+void sendInvalidTimeFormat(WiFiClient& client) {
+  client.println("HTTP/1.1 400 Bad Request");
+  client.println("Content-Type: text/html");
+  client.println();
+  client.println("<html><body><h2>Ungültiges Zeitformat!</h2><a href=\"/\">Zurück</a></body></html>");
+}
+
